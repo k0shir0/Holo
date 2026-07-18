@@ -107,19 +107,9 @@ enum ImpactEventGate {
     }
 
     private static func lowPass(_ values: [Double], sampleRate: Double) -> [Double] {
-        let cutoff = min(6_000.0, sampleRate * 0.20)
-        let alpha = 1 - exp(-2 * Double.pi * cutoff / sampleRate)
-        var states = Array(repeating: 0.0, count: 4)
-        var result = Array(repeating: 0.0, count: values.count)
-        for index in values.indices {
-            var filtered = values[index]
-            for stage in states.indices {
-                states[stage] += alpha * (filtered - states[stage])
-                filtered = states[stage]
-            }
-            result[index] = filtered
-        }
-        return result
+        // Fresh state per call: the gate filters one complete captured window.
+        var filter = OnePoleCascadeFilter<Double>(sampleRate: sampleRate)
+        return filter.process(values)
     }
 
     private static func rms(_ values: ArraySlice<Double>) -> Double {

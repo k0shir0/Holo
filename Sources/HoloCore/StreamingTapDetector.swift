@@ -21,7 +21,7 @@ public final class StreamingTapDetector {
     private var refractorySamplesRemaining = 0
     private var adaptNoiseDuringRefractory = false
     private var warmUpSamplesRemaining: Int
-    private var onsetFilterState = Array(repeating: Float.zero, count: 4)
+    private var onsetFilter: OnePoleCascadeFilter<Float>
 
     public init(
         sampleRate: Double,
@@ -40,6 +40,7 @@ public final class StreamingTapDetector {
         self.noiseFloorRMS = max(initialNoiseFloorRMS, 0.000_01)
         self.warmUpSamplesRemaining = max(Int(sampleRate * warmUpDuration), 0)
         self.preRoll = Array(repeating: [], count: max(channelCount, 1))
+        self.onsetFilter = OnePoleCascadeFilter(sampleRate: sampleRate)
     }
 
     public func reset() {
@@ -50,7 +51,7 @@ public final class StreamingTapDetector {
         refractorySamplesRemaining = 0
         adaptNoiseDuringRefractory = false
         warmUpSamplesRemaining = warmUpSamples
-        onsetFilterState = Array(repeating: 0, count: onsetFilterState.count)
+        onsetFilter.reset()
     }
 
     public func process(channels incoming: [[Float]]) -> [DetectedTap] {
@@ -173,19 +174,8 @@ public final class StreamingTapDetector {
     }
 
     private func lowPassForOnset(_ values: [Float]) -> [Float] {
-        guard !values.isEmpty else { return [] }
-        let cutoff = min(6_000.0, sampleRate * 0.20)
-        let alpha = Float(1 - exp(-2 * Double.pi * cutoff / sampleRate))
-        var result = Array(repeating: Float.zero, count: values.count)
-        for index in values.indices {
-            var filtered = values[index]
-            for stage in onsetFilterState.indices {
-                onsetFilterState[stage] += alpha * (filtered - onsetFilterState[stage])
-                filtered = onsetFilterState[stage]
-            }
-            result[index] = filtered
-        }
-        return result
+        // Persistent state: the filter carries continuity across streaming buffers.
+        onsetFilter.process(values)
     }
 
     private func appendToPreRoll(_ channels: [[Float]]) {
